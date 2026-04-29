@@ -1,21 +1,6 @@
 import streamlit as st
 
-st.title("Erkenntnisse")
-st.markdown(
-    "Was lässt sich aus dem synthetischen POC ableiten — und was nicht?"
-)
-st.divider()
-
-# ── Was der POC zeigt ─────────────────────────────────────────────────────────
-
-st.subheader("Was der POC zeigt")
-st.success(
-    "Die kaskadierende Modellkette funktioniert als Architektur: "
-    "die Kette läuft stabil durch, Fehler pflanzen sich mathematisch korrekt fort, "
-    "Multi-Output in Modell 1 ist umsetzbar und die Feature Importances sind interpretierbar. "
-    "Der Ansatz ist damit prinzipiell vertretbar — das ist der eigentliche Zweck des POC."
-)
-
+st.title("Erkenntnisse & Datenanforderungen")
 st.divider()
 
 # ── Was du NICHT schlussfolgern kannst ───────────────────────────────────────
@@ -66,6 +51,21 @@ for feature, hypothese in hypothesen.items():
     with st.expander(f"**{feature}**"):
         st.markdown(f"**Hypothese:** {hypothese}")
         st.markdown("**Status:** Noch nicht mit echten Daten validiert")
+
+st.divider()
+
+# ── Datenanforderungen ────────────────────────────────────────────────────────
+
+st.subheader("Anforderungen an echte Daten")
+
+st.markdown("#### Mindestumfang")
+c1, c2, c3 = st.columns(3)
+c1.metric("Projekte (Minimum)", "~150–200",
+          help="Unterhalb dieser Grenze sind Random-Forest-Modelle bei ~30 Features instabil")
+c2.metric("Empfohlener Zeitraum", "8–10 Jahre",
+          help="Um verschiedene Projekttypen und Antriebsarten ausreichend abzudecken")
+c3.metric("Kritische Spalten", "T0-Planwerte",
+          help="Nicht Ist-Daten, sondern die Werte die am Projektstart vorlagen")
 
 st.divider()
 
