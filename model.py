@@ -197,6 +197,46 @@ def evaluate_models():
     )
 
 
+@st.cache_data
+def evaluate_markov_baseline():
+    """Semi-Markov baseline: mean phase duration stratified by projekttyp.
+
+    Uses the identical 80/20 split (random_state=42) as evaluate_models so
+    results are directly comparable.
+    """
+    df = pd.read_csv("pep_terminplan_synthetic.csv", sep=";")
+    idx_train, idx_test = train_test_split(df.index, test_size=0.2, random_state=42)
+
+    train = df.loc[idx_train]
+    test  = df.loc[idx_test]
+
+    # Fit: mean phase duration per projekttyp
+    means         = train.groupby("projekttyp")[DURATION_COLS].mean()
+    overall_means = train[DURATION_COLS].mean()
+
+    results = []
+    y_pred_markov = {}
+
+    for target in DURATION_COLS:
+        preds = np.array([
+            means.loc[pt, target] if pt in means.index else overall_means[target]
+            for pt in test["projekttyp"]
+        ])
+        true = test[target].values
+        results.append({
+            "Phase":        PHASE_LABELS[DURATION_COLS.index(target)],
+            "MAE (Markov)": round(mean_absolute_error(true, preds), 1),
+            "RMSE (Markov)":round(root_mean_squared_error(true, preds), 1),
+        })
+        y_pred_markov[target] = preds
+
+    sop_true = test[DURATION_COLS].sum(axis=1).values
+    sop_pred = sum(y_pred_markov[t] for t in DURATION_COLS)
+    sop_mae_markov = round(mean_absolute_error(sop_true, sop_pred), 1)
+
+    return pd.DataFrame(results), sop_mae_markov, y_pred_markov
+
+
 def predict(row_dict, models, enc):
     df_in = pd.DataFrame([row_dict])
     df_in[CAT_FEATURES] = enc.transform(df_in[CAT_FEATURES])

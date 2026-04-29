@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from model import evaluate_models, DURATION_COLS, PHASE_LABELS, PHASE_COLORS
+from model import evaluate_models, evaluate_markov_baseline, DURATION_COLS, PHASE_LABELS, PHASE_COLORS
 
 st.title("Modell-Evaluation")
 st.markdown(
@@ -199,4 +199,52 @@ st.caption(
     f"Der finale kumulative MAE von {cum_mae[-1]:.0f} Tagen entspricht dem Gesamt-SOP-MAE: "
     "die Summe aller vorhergesagten Phasendauern weicht im Schnitt um diese Menge "
     "von der tatsächlichen Gesamtdauer ab."
+)
+
+st.divider()
+
+# ── Vergleich: RF-Kaskade vs. Markov-Baseline ────────────────────────────────
+
+st.subheader("Vergleich: RF-Kaskade vs. Markov-Baseline")
+st.markdown(
+    "Als Referenz wird eine **semi-Markov-Baseline** mitgeführt: "
+    "für jede Phase wird der historische Mittelwert je Projekttyp als Vorhersage verwendet — "
+    "ohne Features, ohne Lernalgorithmus, nur Vergangenheitsdurchschnitte. "
+    "Der Vergleich zeigt, wie viel die kaskadierende Modellkette gegenüber diesem trivialen Ansatz gewinnt."
+)
+
+markov_df, sop_mae_markov, y_pred_markov = evaluate_markov_baseline()
+
+m1, m2, m3 = st.columns(3)
+m1.metric("SOP MAE — RF-Kaskade",      f"{sop_mae} Tage")
+m2.metric("SOP MAE — Markov-Baseline", f"{sop_mae_markov} Tage")
+delta = round(sop_mae_markov - sop_mae, 1)
+m3.metric("Verbesserung durch RF",     f"{delta} Tage",
+          help="Positiv = RF ist besser als die Markov-Baseline")
+
+fig = go.Figure()
+fig.add_trace(go.Bar(
+    name="RF-Kaskade (kask. Vorw.)",
+    x=results_df["Phase"],
+    y=results_df["MAE (kask. Vorw.)"],
+    marker_color="#1f77b4",
+))
+fig.add_trace(go.Bar(
+    name="Markov-Baseline",
+    x=markov_df["Phase"],
+    y=markov_df["MAE (Markov)"],
+    marker_color="#aec7e8",
+    opacity=0.8,
+))
+fig.update_layout(
+    barmode="group", height=320, margin=dict(t=20, b=60, l=10, r=10),
+    xaxis=dict(tickangle=-25), yaxis=dict(title="MAE (Tage)"),
+    legend=dict(orientation="h", y=1.08), plot_bgcolor="#f8f9fa",
+)
+st.plotly_chart(fig, use_container_width=True)
+st.caption(
+    "Die Markov-Baseline kennt nur den Projekttyp — alle weiteren Features (Antriebsart, "
+    "Bauteil-Flags, Ähnlichkeit, ...) werden ignoriert. "
+    "Je mehr die blauen Balken unter den hellblauen liegen, desto mehr leistet das Modell "
+    "über reine Durchschnittswerte hinaus."
 )
