@@ -198,6 +198,24 @@ def evaluate_models():
 
 
 @st.cache_data
+def train_markov_baseline():
+    """Fit Markov baseline on full dataset — mean phase duration per projekttyp."""
+    df = pd.read_csv("pep_terminplan_synthetic.csv", sep=";")
+    cols = DURATION_COLS + [AUXILIARY]
+    means   = df.groupby("projekttyp")[cols].mean()
+    overall = df[cols].mean()
+    return means, overall
+
+
+def predict_markov(row_dict, means, overall_means):
+    pt = row_dict.get("projekttyp", "")
+    src = means.loc[pt] if pt in means.index else overall_means
+    preds = {col: max(10.0, src[col]) for col in DURATION_COLS}
+    preds[AUXILIARY] = max(0.0, src[AUXILIARY])
+    return preds
+
+
+@st.cache_data
 def evaluate_markov_baseline():
     """Semi-Markov baseline: mean phase duration stratified by projekttyp.
 

@@ -5,19 +5,45 @@ import plotly.graph_objects as go
 from datetime import date, timedelta
 from model import (
     train_models, predict, row_to_dict,
+    train_markov_baseline, predict_markov,
     DURATION_COLS, PHASE_LABELS, MILESTONE_LABELS,
     PHASE_COLORS, TEIL_OPTIONS, TEIL_COLS, AUXILIARY,
 )
 
-with st.spinner("Modelle werden trainiert..."):
-    models, enc = train_models()
+with st.spinner("Modelle werden geladen..."):
+    models, enc     = train_models()
+    markov_means, markov_overall = train_markov_baseline()
 
 st.title("Vorhersage")
-st.markdown(
-    "Gib die initialen Projektparameter ein — die kaskadierende Modellkette "
-    "berechnet daraus den voraussichtlichen Terminplan bis zum **Start of Production (SOP)**."
+
+modell_wahl = st.radio(
+    "Modell",
+    options=["RF-Kaskade", "Markov-Baseline"],
+    horizontal=True,
+    help=(
+        "RF-Kaskade: kaskadierende Random-Forest-Kette, nutzt alle Features.  \n"
+        "Markov-Baseline: historischer Mittelwert je Projekttyp, kein Lernalgorithmus."
+    ),
 )
+
+if modell_wahl == "RF-Kaskade":
+    st.markdown(
+        "Die kaskadierende Modellkette berechnet aus den initialen Projektparametern "
+        "den voraussichtlichen Terminplan bis zum **Start of Production (SOP)**."
+    )
+else:
+    st.info(
+        "**Markov-Baseline:** Vorhersage = historischer Durchschnitt je Projekttyp. "
+        "Nur `projekttyp` wird ausgewertet — alle anderen Eingaben haben keinen Einfluss."
+    )
+
 st.divider()
+
+
+def _predict(row_dict):
+    if modell_wahl == "RF-Kaskade":
+        return predict(row_dict, models, enc)
+    return predict_markov(row_dict, markov_means, markov_overall)
 
 
 def show_results(preds, projekt_start):
@@ -119,7 +145,7 @@ with tab_manual:
             **teil_flags,
         }
         st.divider()
-        show_results(predict(row, models, enc), projekt_start_m)
+        show_results(_predict(row), projekt_start_m)
 
 with tab_csv:
     st.markdown("Lade eine CSV-Datei mit Projektdaten hoch (Trennzeichen: `;` oder `,`).")
@@ -144,7 +170,7 @@ with tab_csv:
             ps_csv = st.date_input("Projektstart", value=date.today(), key="ps_csv")
             if st.button("Terminplan berechnen", type="primary", key="btn_csv"):
                 st.divider()
-                show_results(predict(row_to_dict(sel_row), models, enc), ps_csv)
+                show_results(_predict(row_to_dict(sel_row)), ps_csv)
         except Exception as e:
             st.error(f"Fehler beim Lesen der CSV: {e}")
     else:
