@@ -6,8 +6,8 @@ st.set_page_config(
 )
 
 pg = st.navigation([
-    st.Page("pages/vorhersage.py",     title="Vorhersage",     icon="🎯"),
-    st.Page("pages/trainingsdaten.py", title="Trainingsdaten", icon="📊"),
-    st.Page("pages/evaluation.py",     title="Evaluation",     icon="📈"),
+    st.Page("pages/vorhersage.py",     title="Vorhersage"),
+    st.Page("pages/trainingsdaten.py", title="Trainingsdaten"),
+    st.Page("pages/evaluation.py",     title="Evaluation"),
 ])
 pg.run()
