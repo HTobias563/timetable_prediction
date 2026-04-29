@@ -22,10 +22,22 @@ st.subheader("Feature Importance")
 st.markdown(
     "Feature Importance zeigt, **welche Input-Features das Modell am stärksten nutzt**, "
     "um seine Vorhersage zu treffen. Ein hoher Wert bedeutet: dieses Feature hat großen Einfluss "
-    "auf die vorhergesagte Phasendauer.  \n"
-    "Ab Modell 2 enthält die Feature-Matrix auch die **vorhergesagten Dauern der Vorgänger-Modelle** "
-    "(rot markiert) — diese fließen als zusätzliche Features in den nächsten Schritt ein. "
-    "Genau das macht die kaskadierende Kette aus."
+    "auf die vorhergesagte Phasendauer."
+)
+
+col_leg1, col_leg2 = st.columns(2)
+col_leg1.info(
+    "**Blau — Initialer Input-Feature**  \n"
+    "Am Projektstart (T0) bekannte Parameter: z.B. `projekttyp`, `anzahl_teile_neu`, `ressourcen_fte`. "
+    "Diese Werte liegen vor, bevor das erste Modell läuft."
+)
+col_leg2.error(
+    "**Rot — Output eines Vorgänger-Modells**  \n"
+    "Vorhersagen früherer Modelle in der Kette: z.B. `dauer_start_kf_d`, `stueckzahl_kf_refined`. "
+    "Diese Werte sind am T0 **nicht** bekannt — sie werden erst durch die Kette erzeugt und dann "
+    "als zusätzliche Features an das nächste Modell weitergegeben. "
+    "Wenn ein roter Wert oben steht, heißt das: wie lange die Vorphase dauerte, ist der stärkste "
+    "Prädiktor für die aktuelle Phase."
 )
 
 model_choice = st.selectbox(
