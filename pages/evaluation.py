@@ -42,8 +42,8 @@ col_leg2.error(
 
 model_choice = st.selectbox(
     "Modell auswählen",
-    options=[l for l, t in zip(PHASE_LABELS[1:], DURATION_COLS[1:]) if t in feat_imp],
-    index=len(feat_imp) - 1,
+    options=[l for l, t in zip(PHASE_LABELS, DURATION_COLS) if t in feat_imp],
+    index=0,
 )
 target_key = DURATION_COLS[PHASE_LABELS.index(model_choice)]
 imp = feat_imp[target_key].sort_values(ascending=True).tail(15)

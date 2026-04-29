@@ -161,7 +161,8 @@ def evaluate_models():
             p_aux_cas = model.predict(X_cas[feat_names])[:, 1]
             X_cas[AUXILIARY]  = p_aux_cas
             X_true[AUXILIARY] = y_aux_te.values
-            imp = None
+            # Feature importance aus dem ersten Sub-Estimator (dauer_start_kf_d)
+            imp = pd.Series(model.estimators_[0].feature_importances_, index=feat_names)
         else:
             p_true = model.predict(X_true[feat_names])
             p_cas  = model.predict(X_cas[feat_names])
@@ -177,8 +178,7 @@ def evaluate_models():
 
         y_pred_all[target] = p_cas
         y_true_all[target] = y_dur_te[target].values
-        if imp is not None:
-            feat_importances[target] = imp
+        feat_importances[target] = imp
 
         X_true[target] = y_dur_te[target].values
         X_cas[target]  = p_cas
