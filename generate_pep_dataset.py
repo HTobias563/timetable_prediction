@@ -1,26 +1,23 @@
 """
 Synthetischer PEP-Terminplan-Datensatz für die Bachelorarbeit.
 
-Kaskadierende Modellkette mit Auxiliary Outputs:
+Erzeugt 80 fiktive Automotive-Projekte mit realistischen Abhängigkeiten
+zwischen Projektparametern und Meilenstein-Dauern.
+
+Targets der kaskadierenden Modellkette:
 
   Input-Features (T0)
       │
       ▼
   Model 1 (Multi-Output)
-      → dauer_start_kf_d          (Meilenstein-Dauer)
-      → stueckzahl_kf_refined     (Auxiliary: verfeinerte Stückzahl nach KF)
+      → dauer_start_kf_d       Projektstart → Konzeptfreigabe
+      → stueckzahl_kf_refined  Auxiliary: verfeinerte Stückzahl nach KF
       │
       ▼
-  Model 2  (nutzt dauer_start_kf_d + stueckzahl_kf_refined als zusätzliche Features)
-      → dauer_kf_df_d
+  Model 2  → dauer_kf_df_d    Konzeptfreigabe → Designfreigabe
       │
       ▼
-  ...  → Model 7 → dauer_vs_sop_d
-
-Neu gegenüber v1:
-  - Schwerpunktumfang-Flags (7 binäre Features) ersetzen komplexitaet_grad
-  - stueckzahl_kf_refined als Auxiliary-Target von Model 1
-  - Meilenstein-Dauern werden durch spezifische Umfänge beeinflusst
+  ...  → Model 7 → dauer_vs_sop_d  Vorserie → SOP
 """
 
 import numpy as np
@@ -272,11 +269,10 @@ df.to_csv(out_csv, index=False, sep=";", encoding="utf-8-sig")
 
 # ── Statistik ─────────────────────────────────────────────────────────────────
 
-dauer_cols  = ["dauer_start_kf_d","dauer_kf_df_d","dauer_df_tf_d",
-               "dauer_tf_p1_d","dauer_p1_p2_d","dauer_p2_vs_d","dauer_vs_sop_d"]
-umfang_cols = ["umfang_antrieb","umfang_fahrwerk","umfang_karosserie",
-               "umfang_ee_architektur","umfang_innenraum","umfang_adas",
-               "umfang_thermomanagement"]
+dauer_cols = [
+    "dauer_start_kf_d", "dauer_kf_df_d", "dauer_df_tf_d",
+    "dauer_tf_p1_d", "dauer_p1_p2_d", "dauer_p2_vs_d", "dauer_vs_sop_d",
+]
 
 print(f"Datensatz: {out_csv}  ({len(df)} Zeilen, {len(df.columns)} Spalten)\n")
 
