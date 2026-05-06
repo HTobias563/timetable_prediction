@@ -11,51 +11,70 @@ from model import (
 )
 
 with st.spinner("Modelle werden geladen..."):
-    models, enc     = train_models()
+    models, enc          = train_models()
     markov_means, markov_overall = train_markov_baseline()
 
-st.title("Vorhersage")
+st.title("Terminplan-Vorhersage")
+st.divider()
 
 modell_wahl = st.radio(
-    "Modell",
-    options=["RF-Kaskade", "Markov-Baseline"],
+    "Vorhersagemethode",
+    options=["KI-Modell (Random Forest)", "Historischer Mittelwert je Projekttyp"],
     horizontal=True,
     help=(
-        "RF-Kaskade: kaskadierende Random-Forest-Kette, nutzt alle Features.  \n"
-        "Markov-Baseline: historischer Mittelwert je Projekttyp, kein Lernalgorithmus."
+        "KI-Modell: Nutzt alle eingegebenen Parameter für die Vorhersage.  \n"
+        "Historischer Mittelwert: Schätzt anhand von Vergangenheitsdurchschnitten — "
+        "nur der Projekttyp zählt, alle anderen Eingaben werden ignoriert."
     ),
 )
+use_rf = modell_wahl == "KI-Modell (Random Forest)"
 
-if modell_wahl == "RF-Kaskade":
+if use_rf:
     st.markdown(
         "Die kaskadierende Modellkette berechnet aus den initialen Projektparametern "
         "den voraussichtlichen Terminplan bis zum **Start of Production (SOP)**."
     )
 else:
     st.info(
-        "**Markov-Baseline:** Vorhersage = historischer Durchschnitt je Projekttyp. "
-        "Nur `projekttyp` wird ausgewertet — alle anderen Eingaben haben keinen Einfluss."
+        "**Historischer Mittelwert:** Vorhersage = durchschnittliche Dauer je Projekttyp aus den Trainingsdaten. "
+        "Nur der `Projekttyp` wird ausgewertet — alle anderen Eingaben haben keinen Einfluss auf dieses Modell."
     )
 
 st.divider()
 
 
 def _predict(row_dict):
-    if modell_wahl == "RF-Kaskade":
+    if use_rf:
         return predict(row_dict, models, enc)
     return predict_markov(row_dict, markov_means, markov_overall)
+
+
+def _fmt_duration(days: int) -> str:
+    y, rest = divmod(days, 365)
+    m = rest // 30
+    if y and m:
+        return f"{y} Jahre {m} Monate"
+    return f"{y} Jahre" if y else f"{m} Monate"
 
 
 def show_results(preds, projekt_start):
     durations  = [preds[c] for c in DURATION_COLS]
     cumulative = np.cumsum([0] + durations)
     total_days = int(cumulative[-1])
+    sop_date   = projekt_start + timedelta(days=total_days)
 
+    st.subheader("Ergebnis")
     c1, c2, c3 = st.columns(3)
-    c1.metric("Gesamtdauer bis SOP", f"{total_days} Tage", f"≈ {total_days/365:.1f} Jahre")
-    c2.metric("SOP-Datum", (projekt_start + timedelta(days=total_days)).strftime("%d.%m.%Y"))
-    c3.metric("Verfeinerte Stückzahl (nach KF)",
-              f"{int(preds[AUXILIARY]):,}".replace(",", "."))
+    c1.metric(
+        "Gesamtdauer bis SOP",
+        _fmt_duration(total_days),
+        f"{total_days} Tage",
+    )
+    c2.metric("Voraussichtlicher SOP", sop_date.strftime("%d. %B %Y"))
+    c3.metric(
+        "Stückzahl nach Konzeptfreigabe",
+        f"{int(preds[AUXILIARY]):,}".replace(",", "."),
+    )
 
     st.divider()
     st.subheader("Terminplan")
@@ -95,9 +114,13 @@ def show_results(preds, projekt_start):
     for label, dur, start in zip(PHASE_LABELS, durations, cumulative[:-1]):
         sd = projekt_start + timedelta(days=int(start))
         ed = projekt_start + timedelta(days=int(start + dur))
-        rows.append({"Phase": label, "Dauer (Tage)": int(dur),
-                     "Start": sd.strftime("%d.%m.%Y"),
-                     "Meilenstein": ed.strftime("%d.%m.%Y")})
+        rows.append({
+            "Phase":          label,
+            "Dauer":          _fmt_duration(int(dur)),
+            "Dauer (Tage)":   int(dur),
+            "Start":          sd.strftime("%d.%m.%Y"),
+            "Meilenstein":    ed.strftime("%d.%m.%Y"),
+        })
     st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
 
@@ -127,8 +150,10 @@ with tab_manual:
         default_teile = ["Außendesign", "Cockpit / HMI"]
 
     selected_teile = st.multiselect(
-        "Schwerpunktumfänge — betroffene Bauteile (Neuentwicklung)",
+        "Neu entwickelte Bauteile",
         options=list(TEIL_OPTIONS.keys()), default=default_teile,
+        help="Welche Bauteile werden in diesem Projekt neu entwickelt? "
+             "Mehr Neuentwicklungen bedeuten in der Regel längere Phasen.",
     )
     teil_flags = {col: int(label in selected_teile) for label, col in TEIL_OPTIONS.items()}
 

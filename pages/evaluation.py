@@ -7,133 +7,141 @@ from model import evaluate_models, evaluate_markov_baseline, DURATION_COLS, PHAS
 
 st.title("Modell-Evaluation")
 st.markdown(
-    "Hier siehst du, wie gut die kaskadierende Modellkette auf **ungesehenen Testdaten** abschneidet. "
-    "Der Datensatz wurde 80/20 in Trainings- und Testdaten aufgeteilt — die Modelle wurden nur auf den "
-    "Trainingsdaten trainiert und auf den Testdaten bewertet."
+    "Wie gut funktioniert das Modell auf **Daten, die es noch nie gesehen hat**? "
+    "Hier siehst du die Ergebnisse auf einem unabhängigen Testdatensatz (20 % der Daten)."
 )
 st.divider()
 
 with st.spinner("Evaluation wird berechnet..."):
     results_df, feat_imp, sop_mae, sop_rmse, y_pred, y_true, n_train, n_test = evaluate_models()
+    markov_df, sop_mae_markov, y_pred_markov = evaluate_markov_baseline()
 
-# ── Feature Importance ────────────────────────────────────────────────────────
+# ── Kernergebnis ──────────────────────────────────────────────────────────────
 
-st.subheader("Feature Importance")
+avg_duration = float(pd.DataFrame(y_true).sum(axis=1).mean())
+accuracy_pct = round((1 - sop_mae / avg_duration) * 100, 1)
+improvement  = round(sop_mae_markov - sop_mae, 1)
+
+st.subheader("Kernergebnis")
+k1, k2, k3 = st.columns(3)
+k1.metric(
+    "Genauigkeit des KI-Modells",
+    f"{accuracy_pct} %",
+    help=f"Das Modell schätzt den SOP-Termin im Schnitt auf {accuracy_pct}% genau "
+         f"(bezogen auf die mittlere Projektdauer von {int(avg_duration)} Tagen).",
+)
+k2.metric(
+    "Durchschnittliche Abweichung",
+    f"{sop_mae} Tage",
+    help="Im Schnitt weicht die vorhergesagte Gesamtdauer um diese viele Tage ab.",
+)
+k3.metric(
+    "Besser als einfache Schätzung",
+    f"+ {improvement} Tage",
+    help="Um so viele Tage genauer als ein einfacher historischer Mittelwert je Projekttyp.",
+)
+
+st.success(
+    f"Das KI-Modell schätzt den SOP-Termin mit einer **durchschnittlichen Abweichung von "
+    f"{sop_mae} Tagen** — das entspricht einer Genauigkeit von **{accuracy_pct} %**. "
+    f"Gegenüber einer einfachen Durchschnittsschätzung ist es **{improvement} Tage genauer**."
+)
+st.caption(f"Testdatensatz: {n_test} Projekte · Trainingsdatensatz: {n_train} Projekte")
+
+st.divider()
+
+# ── KI-Modell vs. Einfache Schätzung ─────────────────────────────────────────
+
+st.subheader("KI-Modell vs. einfache Schätzung")
 st.markdown(
-    "Feature Importance zeigt, **welche Input-Features das Modell am stärksten nutzt**, "
-    "um seine Vorhersage zu treffen. Ein hoher Wert bedeutet: dieses Feature hat großen Einfluss "
-    "auf die vorhergesagte Phasendauer."
+    "Als Vergleich dient eine **einfache Schätzung**: für jede Phase wird der historische "
+    "Durchschnittswert je Projekttyp verwendet — kein Lernalgorithmus, nur Vergangenheitswerte. "
+    "Je mehr das KI-Modell darunter liegt, desto mehr leistet es."
 )
 
-col_leg1, col_leg2 = st.columns(2)
-col_leg1.info(
-    "**Blau — Initialer Input-Feature**  \n"
-    "Am Projektstart (T0) bekannte Parameter: z.B. `projekttyp`, `anzahl_teile_neu`, `ressourcen_fte`. "
-    "Diese Werte liegen vor, bevor das erste Modell läuft."
-)
-col_leg2.error(
-    "**Rot — Output eines Vorgänger-Modells**  \n"
-    "Vorhersagen früherer Modelle in der Kette: z.B. `dauer_start_kf_d`, `stueckzahl_kf_refined`. "
-    "Diese Werte sind am T0 **nicht** bekannt — sie werden erst durch die Kette erzeugt und dann "
-    "als zusätzliche Features an das nächste Modell weitergegeben. "
-    "Wenn ein roter Wert oben steht, heißt das: wie lange die Vorphase dauerte, ist der stärkste "
-    "Prädiktor für die aktuelle Phase."
-)
+m1, m2, m3 = st.columns(3)
+m1.metric("Abweichung — KI-Modell",          f"{sop_mae} Tage")
+m2.metric("Abweichung — Einfache Schätzung", f"{sop_mae_markov} Tage")
+m3.metric("Verbesserung durch KI",           f"{improvement} Tage",
+          delta=f"{improvement} Tage besser", delta_color="normal")
 
-model_choice = st.selectbox(
-    "Modell auswählen",
-    options=[l for l, t in zip(PHASE_LABELS, DURATION_COLS) if t in feat_imp],
-    index=0,
-)
-target_key = DURATION_COLS[PHASE_LABELS.index(model_choice)]
-imp = feat_imp[target_key].sort_values(ascending=True).tail(15)
-
-colors = ["#d62728" if ("dauer_" in idx or idx == "stueckzahl_kf_refined")
-          else "#1f77b4" for idx in imp.index]
-
-fig = go.Figure(go.Bar(
-    x=imp.values * 100, y=imp.index,
-    orientation="h", marker_color=colors,
-    text=[f"{v:.1f}%" for v in imp.values * 100], textposition="outside",
+fig = go.Figure()
+fig.add_trace(go.Bar(
+    name="KI-Modell",
+    x=results_df["Phase"],
+    y=results_df["MAE (kask. Vorw.)"],
+    marker_color="#1f77b4",
 ))
-fig.add_annotation(
-    x=imp.values.max() * 50, y=-1.8, yref="paper",
-    text="🔴 = Output eines Vorgänger-Modells   🔵 = Initialer Input-Feature",
-    showarrow=False, font=dict(size=11),
-)
+fig.add_trace(go.Bar(
+    name="Einfache Schätzung",
+    x=markov_df["Phase"],
+    y=markov_df["MAE (Markov)"],
+    marker_color="#aec7e8",
+    opacity=0.8,
+))
 fig.update_layout(
-    height=450, margin=dict(t=20, b=50, l=10, r=80),
-    xaxis=dict(title="Importance (%)", range=[0, imp.values.max() * 130]),
-    plot_bgcolor="#f8f9fa",
+    barmode="group", height=320, margin=dict(t=20, b=60, l=10, r=10),
+    xaxis=dict(tickangle=-25), yaxis=dict(title="Abweichung (Tage)"),
+    legend=dict(orientation="h", y=1.08), plot_bgcolor="#f8f9fa",
 )
 st.plotly_chart(fig, use_container_width=True)
-
-st.divider()
-
-# ── Übersicht Metriken ────────────────────────────────────────────────────────
-
-st.subheader("Fehlermetriken — Überblick")
-st.markdown(
-    "**MAE (Mean Absolute Error)** = durchschnittlicher absoluter Fehler in Tagen. "
-    "Leicht zu interpretieren: Im Schnitt weicht die Vorhersage um X Tage ab.  \n"
-    "**RMSE (Root Mean Squared Error)** = bestraft große Ausreißer stärker als der MAE. "
-    "Ein hoher RMSE bei niedrigem MAE bedeutet: vereinzelte Projekte werden sehr schlecht vorhergesagt."
+st.caption(
+    "Blaue Balken unter den hellblauen = KI-Modell ist genauer als die einfache Schätzung. "
+    "Die einfache Schätzung kennt nur den Projekttyp — alle anderen Parameter (Antriebsart, "
+    "Bauteile, Ressourcen …) werden ignoriert."
 )
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Trainings-Projekte", n_train)
-c2.metric("Test-Projekte",      n_test)
-c3.metric("Gesamt-SOP MAE",  f"{sop_mae} Tage",
-          help="Summe aller 7 vorhergesagten Phasendauern vs. tatsächliche SOP-Dauer")
-c4.metric("Gesamt-SOP RMSE", f"{sop_rmse} Tage")
-
 st.divider()
 
-# ── MAE-Tabelle + Balkendiagramm ──────────────────────────────────────────────
+# ── Abweichung je Phase ───────────────────────────────────────────────────────
 
-st.subheader("MAE & RMSE je Modell")
+st.subheader("Abweichung je Entwicklungsphase")
 st.markdown(
-    "Zwei MAE-Varianten werden verglichen:  \n"
-    "- **Echte Vorwerte**: Jedes Modell bekommt die *wahren* Phasendauern der Vorgänger — "
-    "zeigt die Güte des einzelnen Modells ohne Fehlerfortpflanzung.  \n"
-    "- **Kask. Vorwerte**: Jedes Modell bekommt die *vorhergesagten* Vorgänger-Dauern — "
-    "entspricht dem echten Einsatz, Fehler aus früheren Modellen fließen in spätere weiter."
+    "Wie genau ist das Modell **in jeder einzelnen Phase**? "
+    "Die Tabelle zeigt zwei Varianten:  \n"
+    "- **Mit echten Vorgängerwerten** — zeigt, wie gut das Modell allein ist  \n"
+    "- **Mit vorhergesagten Vorgängerwerten** — wie im echten Einsatz, Fehler aus früheren Phasen fließen weiter"
 )
 
 col_t, col_b = st.columns([1, 1])
 with col_t:
+    display_df = results_df.rename(columns={
+        "MAE (echte Vorw.)": "Abw. ideal (Tage)",
+        "MAE (kask. Vorw.)": "Abw. realistisch (Tage)",
+        "RMSE (kask.)":      "Max.-Ausreißer (Tage)",
+        "Ø Dauer (Tage)":    "Ø Dauer (Tage)",
+    })
     st.dataframe(
-        results_df.style.background_gradient(
-            subset=["MAE (kask. Vorw.)", "RMSE (kask.)"], cmap="YlOrRd",
+        display_df.style.background_gradient(
+            subset=["Abw. realistisch (Tage)", "Max.-Ausreißer (Tage)"], cmap="YlOrRd",
         ),
         hide_index=True, use_container_width=True, height=290,
     )
 with col_b:
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        name="MAE (echte Vorwerte)", x=results_df["Phase"],
+        name="Abw. ideal", x=results_df["Phase"],
         y=results_df["MAE (echte Vorw.)"], marker_color="#1f77b4", opacity=0.6,
     ))
     fig.add_trace(go.Bar(
-        name="MAE (kask. Vorwerte)", x=results_df["Phase"],
+        name="Abw. realistisch", x=results_df["Phase"],
         y=results_df["MAE (kask. Vorw.)"], marker_color="#d62728",
     ))
     fig.update_layout(
         barmode="group", height=280, margin=dict(t=20, b=60, l=10, r=10),
-        xaxis=dict(tickangle=-25), yaxis=dict(title="MAE (Tage)"),
+        xaxis=dict(tickangle=-25), yaxis=dict(title="Abweichung (Tage)"),
         legend=dict(orientation="h", y=1.1), plot_bgcolor="#f8f9fa",
     )
     st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
 
-# ── Predicted vs Actual ───────────────────────────────────────────────────────
+# ── Vorhergesagt vs. Tatsächlich ──────────────────────────────────────────────
 
-st.subheader("Predicted vs. Actual je Phase")
+st.subheader("Vorhergesagt vs. Tatsächlich")
 st.markdown(
-    "Jeder Punkt ist ein Test-Projekt. Punkte auf der **gestrichelten Diagonale** = perfekte Vorhersage. "
-    "Punkte darüber = Modell überschätzt die Dauer, darunter = unterschätzt. "
-    "Je enger die Punkte um die Diagonale, desto besser das Modell."
+    "Jeder Punkt ist ein Testprojekt. Punkte **auf der gestrichelten Linie** = perfekte Vorhersage. "
+    "Je enger die Punkte um die Linie, desto genauer das Modell."
 )
 
 cols = st.columns(4)
@@ -145,7 +153,7 @@ for i, (target, label, color) in enumerate(zip(DURATION_COLS, PHASE_LABELS, PHAS
     fig.add_trace(go.Scatter(
         x=true, y=pred, mode="markers",
         marker=dict(color=color, size=8, opacity=0.8),
-        hovertemplate="Ist: %{x:.0f} d<br>Pred: %{y:.0f} d<extra></extra>",
+        hovertemplate="Tatsächlich: %{x:.0f} T<br>Vorhersage: %{y:.0f} T<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=[0, ax_max], y=[0, ax_max], mode="lines",
@@ -154,8 +162,8 @@ for i, (target, label, color) in enumerate(zip(DURATION_COLS, PHASE_LABELS, PHAS
     fig.update_layout(
         title=dict(text=label, font=dict(size=11)), height=240,
         margin=dict(t=40, b=30, l=30, r=10),
-        xaxis=dict(title="Ist (Tage)", range=[0, ax_max]),
-        yaxis=dict(title="Pred (Tage)", range=[0, ax_max]),
+        xaxis=dict(title="Tatsächlich (Tage)", range=[0, ax_max]),
+        yaxis=dict(title="Vorhersage (Tage)", range=[0, ax_max]),
         plot_bgcolor="#f8f9fa",
     )
     cols[i % 4].plotly_chart(fig, use_container_width=True)
@@ -164,12 +172,11 @@ st.divider()
 
 # ── Fehlerfortpflanzung ───────────────────────────────────────────────────────
 
-st.subheader("Fehlerfortpflanzung entlang der Kette")
+st.subheader("Wie wächst der Fehler über die Kette?")
 st.markdown(
-    "Da jedes Modell auf den Vorhersagen der Vorgänger aufbaut, **akkumuliert sich der Fehler** "
-    "entlang der Kette. Die Kurve zeigt den kumulativen MAE nach jedem Schritt. "
-    "Der Anstieg von Schritt zu Schritt zeigt, wie viel Fehler jede neue Phase hinzufügt — "
-    "ein flacher Verlauf bedeutet, das Modell lernt gut trotz Fehlerfortpflanzung."
+    "Das Modell arbeitet in 7 Schritten — jede Phase baut auf der vorherigen auf. "
+    "Fehler aus frühen Phasen können sich in späteren verstärken. "
+    "Die Kurve zeigt, wie viel Abweichung sich bis zu jedem Schritt angesammelt hat."
 )
 
 cum_true = np.zeros(n_test)
@@ -187,64 +194,51 @@ fig.add_trace(go.Scatter(
     fill="tozeroy", fillcolor="rgba(214,39,40,0.1)",
 ))
 for label, val in zip(PHASE_LABELS, cum_mae):
-    fig.add_annotation(x=label, y=val, text=f"{val:.0f} d",
+    fig.add_annotation(x=label, y=val, text=f"{val:.0f} T",
                        showarrow=False, yshift=12, font=dict(size=10))
 fig.update_layout(
     height=320, margin=dict(t=20, b=60, l=10, r=10),
-    xaxis=dict(tickangle=-20), yaxis=dict(title="Kumulativer MAE (Tage)"),
+    xaxis=dict(tickangle=-20), yaxis=dict(title="Kumulierte Abweichung (Tage)"),
     plot_bgcolor="#f8f9fa",
 )
 st.plotly_chart(fig, use_container_width=True)
 st.caption(
-    f"Der finale kumulative MAE von {cum_mae[-1]:.0f} Tagen entspricht dem Gesamt-SOP-MAE: "
-    "die Summe aller vorhergesagten Phasendauern weicht im Schnitt um diese Menge "
-    "von der tatsächlichen Gesamtdauer ab."
+    f"Die finale Abweichung von {cum_mae[-1]:.0f} Tagen entspricht der Gesamtabweichung beim SOP-Termin."
 )
 
 st.divider()
 
-# ── Vergleich: RF-Kaskade vs. Markov-Baseline ────────────────────────────────
+# ── Feature Importance ────────────────────────────────────────────────────────
 
-st.subheader("Vergleich: RF-Kaskade vs. Markov-Baseline")
+st.subheader("Welche Faktoren beeinflussen die Vorhersage am stärksten?")
 st.markdown(
-    "Als Referenz wird eine **semi-Markov-Baseline** mitgeführt: "
-    "für jede Phase wird der historische Mittelwert je Projekttyp als Vorhersage verwendet — "
-    "ohne Features, ohne Lernalgorithmus, nur Vergangenheitsdurchschnitte. "
-    "Der Vergleich zeigt, wie viel die kaskadierende Modellkette gegenüber diesem trivialen Ansatz gewinnt."
+    "Für jede Phase zeigt das Modell, welche Eingabe-Parameter es am stärksten genutzt hat. "
+    "Ein hoher Wert bedeutet: dieser Parameter hatte großen Einfluss auf die Vorhersage."
 )
 
-markov_df, sop_mae_markov, y_pred_markov = evaluate_markov_baseline()
+col_leg1, col_leg2 = st.columns(2)
+col_leg1.info("**Blau — Parameter, die von Anfang an bekannt sind** (z.B. Projekttyp, Ressourcen)")
+col_leg2.error("**Rot — Vorhersagen früherer Phasen** (z.B. wie lange Phase 1 dauerte — erst durch das Modell bekannt)")
 
-m1, m2, m3 = st.columns(3)
-m1.metric("SOP MAE — RF-Kaskade",      f"{sop_mae} Tage")
-m2.metric("SOP MAE — Markov-Baseline", f"{sop_mae_markov} Tage")
-delta = round(sop_mae_markov - sop_mae, 1)
-m3.metric("Verbesserung durch RF",     f"{delta} Tage",
-          help="Positiv = RF ist besser als die Markov-Baseline")
+model_choice = st.selectbox(
+    "Phase auswählen",
+    options=[l for l, t in zip(PHASE_LABELS, DURATION_COLS) if t in feat_imp],
+    index=0,
+)
+target_key = DURATION_COLS[PHASE_LABELS.index(model_choice)]
+imp = feat_imp[target_key].sort_values(ascending=True).tail(15)
 
-fig = go.Figure()
-fig.add_trace(go.Bar(
-    name="RF-Kaskade (kask. Vorw.)",
-    x=results_df["Phase"],
-    y=results_df["MAE (kask. Vorw.)"],
-    marker_color="#1f77b4",
-))
-fig.add_trace(go.Bar(
-    name="Markov-Baseline",
-    x=markov_df["Phase"],
-    y=markov_df["MAE (Markov)"],
-    marker_color="#aec7e8",
-    opacity=0.8,
+colors = ["#d62728" if ("dauer_" in idx or idx == "stueckzahl_kf_refined")
+          else "#1f77b4" for idx in imp.index]
+
+fig = go.Figure(go.Bar(
+    x=imp.values * 100, y=imp.index,
+    orientation="h", marker_color=colors,
+    text=[f"{v:.1f}%" for v in imp.values * 100], textposition="outside",
 ))
 fig.update_layout(
-    barmode="group", height=320, margin=dict(t=20, b=60, l=10, r=10),
-    xaxis=dict(tickangle=-25), yaxis=dict(title="MAE (Tage)"),
-    legend=dict(orientation="h", y=1.08), plot_bgcolor="#f8f9fa",
+    height=450, margin=dict(t=20, b=50, l=10, r=80),
+    xaxis=dict(title="Einfluss (%)", range=[0, imp.values.max() * 130]),
+    plot_bgcolor="#f8f9fa",
 )
 st.plotly_chart(fig, use_container_width=True)
-st.caption(
-    "Die Markov-Baseline kennt nur den Projekttyp — alle weiteren Features (Antriebsart, "
-    "Bauteil-Flags, Ähnlichkeit, ...) werden ignoriert. "
-    "Je mehr die blauen Balken unter den hellblauen liegen, desto mehr leistet das Modell "
-    "über reine Durchschnittswerte hinaus."
-)
